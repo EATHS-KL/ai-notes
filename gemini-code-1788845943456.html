@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mind Pattern Analyzer</title>
+<style>
+  :root { --primary: #0f172a; --accent: #4f46e5; --bg: #f8fafc; --card: #ffffff; --muted: #64748b; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { background: var(--bg); color: var(--primary); padding: 20px; display: flex; justify-content: center; }
+  .container { max-width: 650px; width: 100%; background: var(--card); border-radius: 24px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+  
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 20px; }
+  .btn-settings { background: none; border: none; font-size: 20px; cursor: pointer; }
+  
+  .section { display: none; }
+  .section.active { display: block; }
+
+  textarea { width: 100%; height: 160px; padding: 14px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 16px; outline: none; resize: vertical; margin-bottom: 12px; }
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+
+  button.action-btn { background: var(--accent); color: white; border: none; padding: 14px; width: 100%; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-bottom: 10px; }
+  button.action-btn:hover { background: #4338ca; }
+  button.secondary-btn { background: #e2e8f0; color: #334155; }
+  button.secondary-btn:hover { background: #cbd5e1; }
+
+  input[type="text"], input[type="password"] { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 6px; margin-bottom: 15px; outline: none; }
+  
+  .analysis-box { background: #f0fdf4; border-left: 4px solid #22c55e; padding: 18px; border-radius: 8px; margin-top: 20px; font-size: 15px; line-height: 1.7; color: #166534; white-space: pre-line; }
+  .loader { text-align: center; padding: 30px; font-weight: bold; color: var(--accent); }
+  
+  .note-count { font-size: 13px; color: var(--muted); margin-bottom: 15px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <div>
+      <h3 style="font-size: 20px;">🧠 Mind Pattern Analyzer</h3>
+      <span style="font-size: 12px; color: var(--muted);" id="dateLabel"></span>
+    </div>
+    <button class="btn-settings" onclick="openSettings()" title="Settings">⚙️</button>
+  </div>
+
+  <!-- Settings View -->
+  <div id="settingsView" class="section">
+    <h4>Setup Connections</h4>
+    <label style="font-size: 13px;">Gemini API Key:</label>
+    <input type="password" id="geminiKeyInput">
+    <label style="font-size: 13px;">Google Sheet Web App URL:</label>
+    <input type="text" id="sheetUrlInput">
+    <div style="display: flex; gap: 10px;">
+      <button class="action-btn" onclick="saveSettings()">Save & Continue</button>
+      <button class="action-btn secondary-btn" id="cancelSettingsBtn" onclick="cancelSettings()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Loader View -->
+  <div id="loader" class="loader" style="display: none;">
+    AI dimaag ke panno ko tatol raha hai... 🤖
+  </div>
+
+  <!-- Main Note Writing View -->
+  <div id="mainView" class="section">
+    <div class="note-count" id="noteCountText">Sheet se data sync ho raha hai...</div>
+    <p style="margin-bottom: 8px; font-weight: 500; font-size: 14px;">Jo mann mein aaye likho ya mic se bolo:</p>
+    <textarea id="thoughtInput" placeholder="Aaj kya chal raha hai dimaag mein? Wajah ke sath likhte jao..."></textarea>
+    
+    <button class="action-btn" onclick="saveThought()">Save Thought to Sheet 💾</button>
+    <button class="action-btn secondary-btn" onclick="analyzeThoughts()">Analyze My Mind Patterns 🧠</button>
+  </div>
+
+  <!-- Result View -->
+  <div id="resultView" class="section">
+    <h3>Deep Mind Analysis</h3>
+    <div class="analysis-box" id="analysisOutput"></div>
+    <button class="action-btn" style="margin-top: 20px;" onclick="showSection('mainView')">Back to Writing ✍️</button>
+  </div>
+</div>
+
+<script>
+let previousSection = 'mainView';
+let allNotes = [];
+
+window.onload = async () => {
+  document.getElementById('dateLabel').innerText = new Date().toDateString();
+  const geminiKey = localStorage.getItem('THINK_GEMINI_KEY');
+  const sheetUrl = localStorage.getItem('THINK_SHEET_URL');
+
+  if (!geminiKey || !sheetUrl) {
+    showSection('settingsView');
+  } else {
+    await fetchNotes();
+  }
+};
+
+function showSection(id) {
+  const current = document.querySelector('.section.active');
+  if (current && current.id !== 'settingsView' && current.id !== 'loader') {
+    previousSection = current.id;
+  }
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function openSettings() {
+  document.getElementById('geminiKeyInput').value = localStorage.getItem('THINK_GEMINI_KEY') || '';
+  document.getElementById('sheetUrlInput').value = localStorage.getItem('THINK_SHEET_URL') || '';
+  document.getElementById('cancelSettingsBtn').style.display = (localStorage.getItem('THINK_GEMINI_KEY')) ? 'block' : 'none';
+  showSection('settingsView');
+}
+
+function cancelSettings() { showSection(previousSection); }
+
+function saveSettings() {
+  const k = document.getElementById('geminiKeyInput').value.trim();
+  const u = document.getElementById('sheetUrlInput').value.trim();
+  if(!k || !u) return alert("Dono details daalna zaroori hai!");
+  
+  localStorage.setItem('THINK_GEMINI_KEY', k);
+  localStorage.setItem('THINK_SHEET_URL', u);
+  fetchNotes();
+}
+
+async function fetchNotes() {
+  showSection('loader');
+  try {
+    const sheetUrl = localStorage.getItem('THINK_SHEET_URL');
+    const res = await fetch(sheetUrl);
+    const data = await res.json();
+    allNotes = data.notes || [];
+    document.getElementById('noteCountText').innerText = `Total saved thoughts in sheet: ${allNotes.length}`;
+    showSection('mainView');
+  } catch(e) {
+    alert("Sheet connect karne mein error aayi: " + e.message);
+    showSection('settingsView');
+  }
+}
+
+async function saveThought() {
+  const text = document.getElementById('thoughtInput').value.trim();
+  if (!text) return alert("Kuch likho toh pehle!");
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.innerText = "Saving to Sheet...";
+
+  const sheetUrl = localStorage.getItem('THINK_SHEET_URL');
+  try {
+    await fetch(sheetUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({ note: text })
+    });
+    
+    document.getElementById('thoughtInput').value = "";
+    alert("Thought successfully save ho gaya Google Sheet mein! 🎉");
+    await fetchNotes();
+  } catch(e) {
+    alert("Save nahi ho paya: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Save Thought to Sheet 💾";
+  }
+}
+
+async function analyzeThoughts() {
+  if (allNotes.length === 0) return alert("Analyze karne ke liye sheet mein kuch notes toh hone chahiye!");
+
+  showSection('loader');
+  const apiKey = localStorage.getItem('THINK_GEMINI_KEY');
+
+  const formattedHistory = allNotes.map((item, idx) => `[${item.date}] ${item.note}`).join('\n\n');
+
+  const prompt = `You are an expert psychological pattern analyst and deep thinking partner. 
+  Below is a chronological log of thoughts, reflections, and reasons written by a user over time.
+  Read through everything openly, without rigid templates or restricted formulas. 
+  
+  Analyze the following:
+  1. What are the recurring patterns, behavioral loops, or repeated triggers in these thoughts?
+  2. What underlying reasons or emotional drivers cause these patterns?
+  3. How frequently or under what timing conditions do certain thoughts reappear?
+  4. Give direct, insightful, and practical advice in simple Hinglish (mixed Hindi & English) to help the user break negative loops or understand their own mindset better.
+
+  Here is the user's thought history:
+  ${formattedHistory}`;
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+
+    const resJson = await response.json();
+    const aiResponse = resJson.candidates[0].content.parts[0].text;
+
+    document.getElementById('analysisOutput').innerText = aiResponse;
+    showSection('resultView');
+  } catch(e) {
+    alert("Analysis fail ho gaya: " + e.message);
+    showSection('mainView');
+  }
+}
+</script>
+</body>
+</html>
